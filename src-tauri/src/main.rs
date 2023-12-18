@@ -1,10 +1,23 @@
-use std::io;
+
 use std::sync::{Mutex, Arc};
 use std::collections::HashMap;
-use tauri::{State, Error as TauriError};
+use tauri::State;
 use rand::Rng;
 use tokio::time::{self, Duration};
 use csv::Writer;
+use thiserror::Error;
+
+#[derive(Debug, Error, serde::Serialize)]
+enum MyError {
+    #[error("IO Error: {0}")]
+    IoError(String),
+
+    #[error("CSV Error: {0}")]
+    CsvError(String),
+
+    #[error("UTF-8 Conversion Error: {0}")]
+    Utf8Error(String),
+}
 struct StringTauriState(Arc<Mutex<HashMap<String, u32>>>);
 
 #[tauri::command]
@@ -41,35 +54,33 @@ fn get_hash_map_state(shared_hash_map: State<'_, StringTauriState>) -> HashMap<S
     hash_map.clone()
 }
 
-#[tauri::command]
-fn save_hash_map_to_csv(shared_hash_map: State<'_, StringTauriState>) -> Result<String, TauriError> {
+#[tauri::command(async)]
+fn save_hash_map_to_csv(file_path: String, shared_hash_map: State<'_, StringTauriState>) -> Result<String, MyError> {
     let hash_map = shared_hash_map.0.lock().map_err(|e| 
-        TauriError::Io(io::Error::new(io::ErrorKind::Other, e.to_string()))
+        MyError::IoError(e.to_string())
     )?;
 
     let mut wtr = Writer::from_writer(vec![]);
     for (key, value) in hash_map.iter() {
         wtr.write_record(&[key, &value.to_string()]).map_err(|e| 
-            TauriError::Io(io::Error::new(io::ErrorKind::Other, e.to_string()))
+            MyError::CsvError(e.to_string())
         )?;
     }
     wtr.flush().map_err(|e| 
-        TauriError::Io(io::Error::new(io::ErrorKind::Other, e.to_string()))
+        MyError::CsvError(e.to_string())
     )?;
     
-    let data = match String::from_utf8(wtr.into_inner().map_err(|e| 
-        TauriError::Io(io::Error::new(io::ErrorKind::Other, e.to_string()))
-    )?) {
-        Ok(data) => data,
-        Err(e) => return Err(TauriError::Io(io::Error::new(io::ErrorKind::Other, e.to_string()))),
-    };
-
-    let file_path = "hash_map_data.csv";
-    std::fs::write(file_path, data).map_err(|e| 
-        TauriError::Io(io::Error::new(io::ErrorKind::Other, e.to_string()))
+    let data = String::from_utf8(wtr.into_inner().map_err(|e| 
+        MyError::CsvError(e.to_string())
+    )?).map_err(|e| 
+        MyError::Utf8Error(e.to_string())
     )?;
 
-    Ok(format!("Data saved to {}", file_path))
+    std::fs::write(&file_path, data).map_err(|e| 
+        MyError::IoError(e.to_string())
+    )?;
+
+    Ok(format!("Data saved to {}", &file_path))
 }
 
 fn main() {
