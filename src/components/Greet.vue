@@ -2,20 +2,42 @@
 import { ref } from "vue";
 import { invoke } from "@tauri-apps/api/tauri";
 
-const greetMsg = ref("");
+const hashMapData = ref({});
 const name = ref("");
 
-async function greet() {
-  // Learn more about Tauri commands at https://tauri.app/v1/guides/features/command
-  greetMsg.value = await invoke("greet", { name: name.value });
+async function updateHashMap() {
+  try {
+    const response = await invoke("push_to_hash_map", { word: name.value });
+    hashMapData.value = response;
+  } catch (error) {
+    console.error('Error invoking Tauri command:', error);
+  }
 }
 </script>
 
 <template>
-  <form class="row" @submit.prevent="greet">
-    <input id="greet-input" v-model="name" placeholder="Enter a name..." />
-    <button type="submit">Greet</button>
-  </form>
-
-  <p>{{ greetMsg }}</p>
+  <div class="container">
+    <form class="input-form" @submit.prevent="updateHashMap">
+      <input id="word-input" v-model="name" placeholder="Enter a word..." />
+      <button type="submit">Update HashMap</button>
+    </form>
+  </div>
 </template>
+
+<style>
+.container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 10vh;
+}
+
+.input-form {
+  margin-bottom: 20px;
+}
+
+.hashmap-display {
+  text-align: center;
+}
+</style>
